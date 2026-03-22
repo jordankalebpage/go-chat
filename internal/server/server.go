@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -18,9 +20,10 @@ import (
 )
 
 type Config struct {
-	Port            string
-	ShutdownTimeout time.Duration
-	StaticFS        fs.FS
+	DemoAccessPassword string
+	Port               string
+	ShutdownTimeout    time.Duration
+	StaticFS           fs.FS
 }
 
 type Server struct {
@@ -28,6 +31,8 @@ type Server struct {
 	hub        *chat.Hub
 	httpServer *http.Server
 }
+
+const demoAccessCookieName = "go_chat_demo_access"
 
 func New(config Config, hub *chat.Hub) *Server {
 	server := &Server{
@@ -43,11 +48,13 @@ func New(config Config, hub *chat.Hub) *Server {
 	wsLimiter := appmiddleware.NewIPRateLimiter(1, 5, 15*time.Minute)
 
 	router.Route("/api", func(r chi.Router) {
+		r.Get("/session", server.handleSession)
+		r.Post("/session", server.handleSessionLogin)
 		r.Get("/health", server.handleHealth)
-		r.Get("/rooms", server.handleRooms)
+		r.With(server.requireDemoAccess).Get("/rooms", server.handleRooms)
 	})
 
-	router.With(wsLimiter.Middleware).Get("/ws", server.handleWebSocket)
+	router.With(server.requireDemoAccess, wsLimiter.Middleware).Get("/ws", server.handleWebSocket)
 
 	if config.StaticFS != nil {
 		router.Handle("/", spaHandler(config.StaticFS))
@@ -74,6 +81,51 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
+	})
+}
+
+func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"requiresPassword": s.demoAccessEnabled(),
+		"unlocked":         s.hasDemoAccess(r),
+	})
+}
+
+func (s *Server) handleSessionLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.demoAccessEnabled() {
+		writeJSON(w, http.StatusOK, map[string]bool{
+			"unlocked": true,
+		})
+		return
+	}
+
+	type sessionLoginRequest struct {
+		Password string `json:"password"`
+	}
+
+	var request sessionLoginRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if request.Password != s.config.DemoAccessPassword {
+		http.Error(w, "invalid password", http.StatusUnauthorized)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     demoAccessCookieName,
+		Value:    demoAccessToken(s.config.DemoAccessPassword),
+		HttpOnly: true,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestScheme(r) == "https",
+	})
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"unlocked": true,
 	})
 }
 
@@ -129,6 +181,34 @@ func spaHandler(staticFS fs.FS) http.Handler {
 	})
 }
 
+func (s *Server) requireDemoAccess(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.demoAccessEnabled() || s.hasDemoAccess(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+	})
+}
+
+func (s *Server) hasDemoAccess(r *http.Request) bool {
+	if !s.demoAccessEnabled() {
+		return true
+	}
+
+	cookie, err := r.Cookie(demoAccessCookieName)
+	if err != nil {
+		return false
+	}
+
+	return cookie.Value == demoAccessToken(s.config.DemoAccessPassword)
+}
+
+func (s *Server) demoAccessEnabled() bool {
+	return strings.TrimSpace(s.config.DemoAccessPassword) != ""
+}
+
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -139,7 +219,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 func allowCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" {
+		if origin != "" && sameOrigin(origin, r.Host, requestScheme(r)) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
@@ -154,4 +234,26 @@ func allowCORS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func sameOrigin(origin string, host string, scheme string) bool {
+	return origin == scheme+"://"+host
+}
+
+func requestScheme(r *http.Request) string {
+	forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if forwardedProto != "" {
+		return forwardedProto
+	}
+
+	if r.TLS != nil {
+		return "https"
+	}
+
+	return "http"
+}
+
+func demoAccessToken(password string) string {
+	sum := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(sum[:])
 }

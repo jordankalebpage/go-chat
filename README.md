@@ -95,8 +95,10 @@ The server also emits `join` and `leave` events so the frontend can update room 
 1. Push the project to a Git provider supported by Railway.
 2. Create a new Railway project and select the repo.
 3. Railway will detect the `Dockerfile` automatically.
-4. Set `PORT=8080` if Railway does not inject it for you.
-5. Deploy. Railway supports long-lived WebSocket connections, so the chat transport works without switching to polling or serverless fallbacks.
+4. Set `DEMO_ACCESS_PASSWORD` so the live chat stays gated behind a password-protected session.
+5. Set a hard spend limit in Railway cost controls before sharing the URL.
+6. Set `PORT=8080` if Railway does not inject it for you.
+7. Deploy. Railway supports long-lived WebSocket connections, so the chat transport works without switching to polling or serverless fallbacks.
 
 ## Architecture notes
 

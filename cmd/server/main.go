@@ -33,9 +33,10 @@ func main() {
 	go hub.Run(ctx)
 
 	config := server.Config{
-		Port:            port,
-		ShutdownTimeout: 10 * time.Second,
-		StaticFS:        staticFS,
+		DemoAccessPassword: os.Getenv("DEMO_ACCESS_PASSWORD"),
+		Port:               port,
+		ShutdownTimeout:    10 * time.Second,
+		StaticFS:           staticFS,
 	}
 
 	appServer := server.New(config, hub)

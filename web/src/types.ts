@@ -21,3 +21,8 @@ export interface RoomSummary {
   name: string;
   memberCount: number;
 }
+
+export interface SessionState {
+  requiresPassword: boolean;
+  unlocked: boolean;
+}

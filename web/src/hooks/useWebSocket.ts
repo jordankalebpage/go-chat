@@ -6,6 +6,7 @@ const reconnectDelays = [1000, 2000, 5000, 10000];
 const maxMessages = 200;
 
 interface UseWebSocketOptions {
+  enabled?: boolean;
   room: string;
   username: string;
 }
@@ -19,13 +20,14 @@ interface UseWebSocketResult {
 }
 
 export function useWebSocket({
+  enabled = true,
   room,
   username,
 }: UseWebSocketOptions): UseWebSocketResult {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ServerMessage[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>(() => {
-    if (room === "" || username === "") {
+    if (!enabled || room === "" || username === "") {
       return "idle";
     }
 
@@ -58,7 +60,10 @@ export function useWebSocket({
   }, []);
 
   useEffect(() => {
-    if (room === "" || username === "") {
+    if (!enabled || room === "" || username === "") {
+      setStatus("idle");
+      setUsers([]);
+      setMessages([]);
       return undefined;
     }
 
@@ -145,7 +150,7 @@ export function useWebSocket({
         socketRef.current = null;
       }
     };
-  }, [room, username]);
+  }, [enabled, room, username]);
 
   return {
     error,

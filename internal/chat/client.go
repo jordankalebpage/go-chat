@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -22,8 +23,18 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(_ *http.Request) bool {
-		return true
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+
+		parsedOrigin, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+
+		return parsedOrigin.Host == r.Host
 	},
 }
 
@@ -36,8 +47,8 @@ type Client struct {
 	room     string
 	username string
 	limiter  *rate.Limiter
-	sendOnce  sync.Once
-	connOnce  sync.Once
+	sendOnce sync.Once
+	connOnce sync.Once
 }
 
 func NewClient(hub *Hub, conn *websocket.Conn, room string, username string) *Client {

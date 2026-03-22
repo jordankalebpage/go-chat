@@ -2,12 +2,14 @@ import { ChatRoom } from "./ChatRoom";
 import { useWebSocket } from "../hooks/useWebSocket";
 
 interface LiveChatProps {
+  enabled?: boolean;
   room: string;
   username: string;
 }
 
-export function LiveChat({ room, username }: LiveChatProps) {
+export function LiveChat({ enabled = true, room, username }: LiveChatProps) {
   const { error, messages, sendMessage, status, users } = useWebSocket({
+    enabled,
     room,
     username,
   });
