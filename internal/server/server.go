@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -95,7 +96,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := chat.Upgrade(w, r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("websocket upgrade failed: %v", err)
 		return
 	}
 
