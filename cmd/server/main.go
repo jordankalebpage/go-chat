@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +19,10 @@ import (
 )
 
 func main() {
+	if err := loadEnvFile(".env"); err != nil {
+		log.Fatalf("load .env: %v", err)
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -64,4 +71,53 @@ func main() {
 	}
 
 	log.Fatalf("server error: %v", err)
+}
+
+func loadEnvFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return err
+	}
+
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			return fmt.Errorf("line %d: expected KEY=VALUE", lineNumber)
+		}
+
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("line %d: missing key", lineNumber)
+		}
+
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	return nil
 }
