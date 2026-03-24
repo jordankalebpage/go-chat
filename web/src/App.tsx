@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useMemo, useState } from "react";
+import type { SubmitEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { LiveChat } from "./components/LiveChat";
 import { RoomList } from "./components/RoomList";
@@ -12,95 +13,37 @@ const fallbackRooms: RoomSummary[] = [
   { name: "streaming", memberCount: 0 },
 ];
 
+const sessionQueryKey = ["session"] as const;
+const roomsQueryKey = ["rooms"] as const;
+
 function App() {
   const [accessError, setAccessError] = useState<string | null>(null);
   const [accessPassword, setAccessPassword] = useState("");
   const [draftUsername, setDraftUsername] = useState("gopher");
-  const [roomError, setRoomError] = useState<string | null>(null);
-  const [rooms, setRooms] = useState<RoomSummary[]>(fallbackRooms);
   const [selectedRoom, setSelectedRoom] = useState("general");
-  const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [username, setUsername] = useState("gopher");
+  const queryClient = useQueryClient();
 
-  const loadSession = useCallback(async () => {
-    try {
-      const response = await fetch("/api/session");
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
+  const sessionQuery = useQuery({
+    queryKey: sessionQueryKey,
+    queryFn: fetchSessionState,
+    refetchInterval: 30000,
+  });
 
-      const data = (await response.json()) as SessionState;
-      setSessionState(data);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to load session.";
-      setAccessError(message);
-    }
-  }, []);
+  const sessionState = sessionQuery.data ?? null;
+  const requiresPassword = sessionState?.requiresPassword ?? false;
+  const isUnlocked = sessionState?.unlocked ?? false;
+  const canLoadRooms =
+    sessionState !== null && (!requiresPassword || isUnlocked);
 
-  useEffect(() => {
-    void loadSession();
+  const roomsQuery = useQuery({
+    queryKey: roomsQueryKey,
+    queryFn: fetchRooms,
+    enabled: canLoadRooms,
+    refetchInterval: 15000,
+  });
 
-    const interval = window.setInterval(() => {
-      void loadSession();
-    }, 30000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [loadSession]);
-
-  const loadRooms = useCallback(async () => {
-    if (sessionState === null) {
-      return;
-    }
-
-    if (sessionState.requiresPassword && !sessionState.unlocked) {
-      setRooms(fallbackRooms);
-      setRoomError(null);
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/rooms");
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as RoomSummary[];
-      setRoomError(null);
-
-      if (data.length === 0) {
-        setRooms(fallbackRooms);
-        return;
-      }
-
-      setRooms(ensureRoomExists(data, selectedRoom));
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to load rooms.";
-      setRoomError(message);
-      setRooms((currentRooms) => ensureRoomExists(currentRooms, selectedRoom));
-    }
-  }, [selectedRoom, sessionState]);
-
-  useEffect(() => {
-    if (sessionState === null) {
-      return;
-    }
-
-    void loadRooms();
-
-    const interval = window.setInterval(() => {
-      void loadRooms();
-    }, 15000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [loadRooms, sessionState]);
-
-  const handleUsernameSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleUsernameSubmit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const trimmedUsername = draftUsername.trim();
@@ -111,7 +54,7 @@ function App() {
     setUsername(trimmedUsername);
   };
 
-  const handleAccessSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleAccessSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const trimmedPassword = accessPassword.trim();
@@ -120,47 +63,47 @@ function App() {
     }
 
     try {
-      const response = await fetch("/api/session", {
-        body: JSON.stringify({
-          password: trimmedPassword,
+      const data = await unlockSession(trimmedPassword);
+
+      queryClient.setQueryData<SessionState>(
+        sessionQueryKey,
+        (currentState) => ({
+          requiresPassword: currentState?.requiresPassword ?? true,
+          unlocked: data.unlocked,
         }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-      });
+      );
 
-      if (!response.ok) {
-        throw new Error(
-          response.status === 401
-            ? "Incorrect demo password."
-            : `Request failed with status ${response.status}`,
-        );
-      }
-
-      const data = (await response.json()) as Pick<SessionState, "unlocked">;
-
-      setSessionState((currentState) => ({
-        requiresPassword: currentState?.requiresPassword ?? true,
-        unlocked: data.unlocked,
-      }));
       setAccessError(null);
       setAccessPassword("");
-      void loadRooms();
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: roomsQueryKey }),
+      ]);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to unlock demo.";
-      setAccessError(message);
+      setAccessError(getErrorMessage(error, "Unable to unlock demo."));
     }
   };
 
-  const visibleRooms = useMemo(
-    () => ensureRoomExists(rooms, selectedRoom),
-    [rooms, selectedRoom],
-  );
+  const visibleRooms = useMemo(() => {
+    if (!canLoadRooms) {
+      return ensureRoomExists(fallbackRooms, selectedRoom);
+    }
 
-  const requiresPassword = sessionState?.requiresPassword ?? false;
-  const isUnlocked = sessionState?.unlocked ?? false;
+    const rooms = roomsQuery.data;
+    if (rooms === undefined || rooms.length === 0) {
+      return ensureRoomExists(fallbackRooms, selectedRoom);
+    }
+
+    return ensureRoomExists(rooms, selectedRoom);
+  }, [canLoadRooms, roomsQuery.data, selectedRoom]);
+
+  const visibleAccessError =
+    accessError ??
+    getQueryErrorMessage(sessionQuery.error, "Unable to load session.");
+  const roomError = canLoadRooms
+    ? getQueryErrorMessage(roomsQuery.error, "Unable to load rooms.")
+    : null;
   const showAccessGate =
     sessionState === null || (requiresPassword && !isUnlocked);
 
@@ -254,9 +197,9 @@ function App() {
             </div>
           </div>
 
-          {accessError !== null ? (
+          {visibleAccessError !== null ? (
             <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-              {accessError}
+              {visibleAccessError}
             </div>
           ) : null}
 
@@ -314,3 +257,67 @@ function ensureRoomExists(
 }
 
 export default App;
+
+async function fetchSessionState(): Promise<SessionState> {
+  return fetchJson<SessionState>("/api/session", "Unable to load session.");
+}
+
+async function fetchRooms(): Promise<RoomSummary[]> {
+  return fetchJson<RoomSummary[]>("/api/rooms", "Unable to load rooms.");
+}
+
+async function unlockSession(
+  password: string,
+): Promise<Pick<SessionState, "unlocked">> {
+  const response = await fetch("/api/session", {
+    body: JSON.stringify({
+      password,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      response.status === 401
+        ? "Incorrect demo password."
+        : `Request failed with status ${response.status}`,
+    );
+  }
+
+  return (await response.json()) as Pick<SessionState, "unlocked">;
+}
+
+async function fetchJson<T>(url: string, fallbackMessage: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch (error) {
+    throw new Error(getErrorMessage(error, fallbackMessage));
+  }
+}
+
+function getQueryErrorMessage(
+  error: Error | null,
+  fallbackMessage: string,
+): string | null {
+  if (error === null) {
+    return null;
+  }
+
+  return getErrorMessage(error, fallbackMessage);
+}
+
+function getErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
