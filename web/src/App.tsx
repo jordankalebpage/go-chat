@@ -161,12 +161,13 @@ function App() {
 
   const requiresPassword = sessionState?.requiresPassword ?? false;
   const isUnlocked = sessionState?.unlocked ?? false;
-  const showAccessGate = sessionState === null || (requiresPassword && !isUnlocked);
+  const showAccessGate =
+    sessionState === null || (requiresPassword && !isUnlocked);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(139,92,246,0.35),_transparent_35%),linear-gradient(180deg,_rgba(15,23,42,0.95),_rgba(2,6,23,0.98))] p-6 shadow-2xl shadow-slate-950/40 sm:p-8">
+        <section className="overflow-hidden rounded-4xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.35),transparent_35%),linear-gradient(180deg,rgba(15,23,42,0.95),rgba(2,6,23,0.98))] p-6 shadow-2xl shadow-slate-950/40 sm:p-8">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-violet-300">
@@ -185,7 +186,7 @@ function App() {
 
             <div className="space-y-4">
               <form
-                className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-4"
+                className="rounded-3xl border border-white/10 bg-slate-950/70 p-4"
                 onSubmit={handleUsernameSubmit}
               >
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
@@ -217,7 +218,7 @@ function App() {
 
               {requiresPassword ? (
                 <form
-                  className="rounded-[1.5rem] border border-amber-300/20 bg-amber-500/10 p-4"
+                  className="rounded-3xl border border-amber-300/20 bg-amber-500/10 p-4"
                   onSubmit={handleAccessSubmit}
                 >
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-200">
@@ -273,7 +274,7 @@ function App() {
             rooms={visibleRooms}
           />
           {showAccessGate ? (
-            <section className="rounded-[2rem] border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-slate-950/30">
+            <section className="rounded-4xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-slate-950/30">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-200">
                 Demo Locked
               </p>
