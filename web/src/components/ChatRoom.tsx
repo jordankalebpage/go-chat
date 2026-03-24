@@ -34,7 +34,7 @@ export function ChatRoom({
     username !== "" && (status === "connected" || status === "reconnecting");
 
   return (
-    <section className="rounded-[2rem] border border-white/10 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
+    <section className="rounded-4xl border border-white/10 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
       <div className="mb-4 flex flex-col gap-4 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-violet-300">
